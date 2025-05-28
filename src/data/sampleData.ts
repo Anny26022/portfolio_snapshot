@@ -42,19 +42,19 @@ export interface EnhancedPortfolioData {
 export const samplePortfolioData: EnhancedPortfolioData = {
   stocks: [
     {
-      ticker: 'TI', status: 'Open', daysHeld: 2, tradeMgt: 'SL + BE', setup: 'ITB', openRisk: 0, sizePercent: 20.90, price: 795.00, returnPercent: 2.24, cap: 'Midcap', position: '1/3', industry: '',
+      ticker: 'TI', status: 'Open', tradeMgt: 'SL + BE', setup: 'ITB', openRisk: 0, sizePercent: 20.90, price: 795.00, cap: 'Midcap', position: '1/3', industry: 'Breweries & Distilleries', buyPrice: 100,
     },
     {
-      ticker: 'DHANI', status: 'Open', daysHeld: 1, tradeMgt: 'SL + BE', setup: 'ITB', openRisk: 0, sizePercent: 15.20, price: 442.85, returnPercent: 1.15, cap: 'Smallcap', position: '1/4', industry: '',
+      ticker: 'DHANI', status: 'Open', tradeMgt: 'SL + BE', setup: 'ITB', openRisk: 0, sizePercent: 15.20, price: 442.85, cap: 'Smallcap', position: '1/4', industry: 'Financial Services', buyPrice: 100,
     },
     {
-      ticker: 'MOBIKWIK', status: 'Open', daysHeld: 1, tradeMgt: 'Open risk', setup: 'IPO Base', openRisk: 0.56, sizePercent: 13.40, price: 768.75, returnPercent: 0.25, cap: 'Largecap', position: '1/2', industry: '',
+      ticker: 'MOBIKWIK', status: 'Open', tradeMgt: 'Open risk', setup: 'IPO Base', openRisk: 0.56, sizePercent: 13.40, price: 768.75, cap: 'Largecap', position: '1/2', industry: 'Fintech', buyPrice: 100,
     },
     {
-      ticker: 'EIEL', status: 'Open', daysHeld: null, tradeMgt: 'Open risk', setup: 'IPO Base', openRisk: 0.32, sizePercent: 10.00, price: 0, returnPercent: 1.61, cap: 'Midcap', position: '1/4', industry: '',
+      ticker: 'EIEL', status: 'Open', tradeMgt: 'Open risk', setup: 'IPO Base', openRisk: 0.32, sizePercent: 10.00, price: 0, cap: 'Midcap', position: '1/4', industry: 'Engineering', buyPrice: 100,
     },
     {
-      ticker: 'DAMCAPITAL', status: 'Open', daysHeld: null, tradeMgt: 'Open risk', setup: 'IPO Base', openRisk: 0.44, sizePercent: 12.50, price: 0, returnPercent: 2.85, cap: 'Smallcap', position: '1/2', industry: '',
+      ticker: 'DAMCAPITAL', status: 'Open', tradeMgt: 'Open risk', setup: 'IPO Base', openRisk: 0.44, sizePercent: 12.50, price: 0, cap: 'Smallcap', position: '1/2', industry: 'Investment Banking', buyPrice: 100,
     },
   ] as ExtendedStockData[],
   totalOpenRisk: 1.32,

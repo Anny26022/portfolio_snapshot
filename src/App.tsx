@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import EnhancedPortfolioTable, { ExtendedStockData } from './components/EnhancedPortfolioTable';
+import EnhancedPortfolioTable, { ExtendedStockData, fetchStrikeLatestClose } from './components/EnhancedPortfolioTable';
 import Stats from './components/Stats';
 import EditableRiskInvestmentSummary from './components/EditableRiskInvestmentSummary';
 // import { getCurrentDate, formatDisplayDate } from './utils/localStorage'; // Only import date utils if needed, otherwise define locally
@@ -98,6 +98,33 @@ function App() {
     let cancelled = false;
     setIsLoading(true);
     setError(null);
+    let interval: NodeJS.Timeout | null = null;
+
+    const updateSamplePrices = async () => {
+      setPortfolioData(prev => {
+        if (!prev) return prev;
+        return { ...prev, loadingPrices: true };
+      });
+
+      portfolioData?.stocks.forEach(async (stock, idx) => {
+        if (typeof stock.buyPrice === 'number' && stock.buyPrice > 0) {
+          const buyPrice = stock.buyPrice;
+          const latestPrice = await fetchStrikeLatestClose(stock.ticker);
+          if (latestPrice !== null) {
+            setPortfolioData(prev2 => {
+              if (!prev2) return prev2;
+              const updatedStocks = [...prev2.stocks];
+              updatedStocks[idx] = {
+                ...updatedStocks[idx], // Use the latest stock, not the stale one
+                price: latestPrice,
+                returnPercent: ((latestPrice - buyPrice) / buyPrice) * 100,
+              };
+              return { ...prev2, stocks: updatedStocks };
+            });
+          }
+        }
+      });
+    };
 
     const loadData = async () => {
       if (user) {
@@ -144,22 +171,29 @@ function App() {
           if (!cancelled) setIsLoading(false);
         }
       } else {
-        // Not logged in: show sample data, but warn user
-        setPortfolioData({
-          ...samplePortfolioData,
-          settings: {
-            ...samplePortfolioData.settings,
-            date: getTodayYYYYMMDD(),
-          },
-        });
+        // Not logged in: show sample data, unless user has interacted
+        if (!hasUserInteracted) {
+          setPortfolioData({
+            ...samplePortfolioData,
+            settings: {
+              ...samplePortfolioData.settings,
+              date: getTodayYYYYMMDD(),
+            },
+          });
+        }
         setIsLoading(false);
+        // Immediately update prices on mount
+        updateSamplePrices();
+        // Set up interval to update prices every minute
+        interval = setInterval(updateSamplePrices, 60 * 1000);
       }
     };
     loadData();
     return () => {
       cancelled = true;
+      if (interval) clearInterval(interval);
     };
-  }, [user]);
+  }, [user, hasUserInteracted]);
 
   // Set up real-time subscription when user is authenticated
   useEffect(() => {

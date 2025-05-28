@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { parseCsvToIndustryMap, SymbolIndustryMap } from '../csvUtils';
+import { useAuthContext } from '../context/AuthContext';
+import { useCircuitLimit } from '../services/strikeApi';
 
 interface ExtendedStockData {
   ticker: string;
@@ -56,8 +58,6 @@ const tradeMgtTypes = [
   'Cost'
 ];
 
-
-
 const statusOptions = ['Open', 'Closed'];
 
 const USER_AGENTS = [
@@ -75,37 +75,50 @@ function getRandomUserAgent() {
   return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 
+// Helper to get current IST date/time
+function getISTDate() {
+  // IST is UTC+5:30
+  const now = new Date();
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  return new Date(utc + (5.5 * 60 * 60 * 1000));
+}
+
 function getStrikeApiUrl(ticker: string): string {
   const strikeTicker = `EQ:${ticker.replace('.NS', '')}`;
   const encodedTicker = encodeURIComponent(strikeTicker);
-  const fromRaw = '2023-11-09T09:15:59+05:30';
-  const encodedFrom = encodeURIComponent(fromRaw);
-  const today = new Date();
-  const yyyy = today.getFullYear();
-  const mm = String(today.getMonth() + 1).padStart(2, '0');
-  const dd = String(today.getDate()).padStart(2, '0');
-  const to = `${yyyy}-${mm}-${dd}`;
-  // Complex obfuscation for the Strike API base URL
-  const parts = [
-    "cHJpY2V0aWNrcw==", // priceticks
-    "ZXF1aXR5",         // equity
-    "YXBp",             // api
-    "djI=",             // v2
-    "bW9uZXk=",         // money
-    "c3RyaWtl",         // strike
-    "YXBpLXByb2QtdjIx", // api-prod-v21
-    "aHR0cHM6",         // https:
-  ];
-  const baseUrl =
-    atob(parts[7]) + "//" +
-    atob(parts[6]) + "." +
-    atob(parts[5]) + "." +
-    atob(parts[4]) + "/" +
-    atob(parts[3]) + "/" +
-    atob(parts[2]) + "/" +
-    atob(parts[1]) + "/" +
-    atob(parts[0]);
-  return `${baseUrl}?candleInterval=1d&from=${encodedFrom}&to=${to}&securities=${encodedTicker}`;
+  const istNow = getISTDate();
+  const yyyy = istNow.getFullYear();
+  const mm = String(istNow.getMonth() + 1).padStart(2, '0');
+  const dd = String(istNow.getDate()).padStart(2, '0');
+  const dayOfWeek = istNow.getDay(); // 0=Sunday, 6=Saturday
+  const pad = (n: number) => String(n).padStart(2, '0');
+
+  // Market hours in IST
+  const marketOpen = new Date(istNow);
+  marketOpen.setHours(9, 15, 0, 0);
+  const marketClose = new Date(istNow);
+  marketClose.setHours(15, 30, 0, 0);
+
+  let candleInterval, from, to;
+  if (dayOfWeek === 0 || dayOfWeek === 6) {
+    // Weekend: fetch historical daily data
+    candleInterval = '1d';
+    from = `2023-01-01T09:15:59+05:30`;
+    to = `${yyyy}-${mm}-${dd}T15:30:00+05:30`;
+  } else if (istNow >= marketOpen && istNow <= marketClose) {
+    // Market day and within market hours: fetch today's 1m data
+    candleInterval = '1m';
+    from = `${yyyy}-${mm}-${dd}T09:15:59+05:30`;
+    to = `${yyyy}-${mm}-${dd}T${pad(istNow.getHours())}:${pad(istNow.getMinutes())}:${pad(istNow.getSeconds())}+05:30`;
+  } else {
+    // Market day but outside market hours: fetch historical daily data
+    candleInterval = '1d';
+    from = `2023-01-01T09:15:59+05:30`;
+    to = `${yyyy}-${mm}-${dd}T15:30:00+05:30`;
+  }
+  const encodedFrom = encodeURIComponent(from);
+  const encodedTo = encodeURIComponent(to);
+  return `https://api-prod-v21.strike.money/v2/api/equity/priceticks?candleInterval=${candleInterval}&from=${encodedFrom}&to=${encodedTo}&securities=${encodedTicker}`;
 }
 
 async function fetchStrikeLatestClose(ticker: string): Promise<number | null> {
@@ -124,10 +137,43 @@ async function fetchStrikeLatestClose(ticker: string): Promise<number | null> {
   return null;
 }
 
+const TickerTooltip: React.FC<{ ticker: string }> = ({ ticker }) => {
+  const { circuitLimit, isLoading } = useCircuitLimit(ticker);
+  
+  if (isLoading) return null;
+  if (!circuitLimit?.upperPrice || !circuitLimit?.lowerPrice) return null;
+  
+  // Calculate the percentage difference between upper and lower circuit
+  const midPrice = (circuitLimit.upperPrice + circuitLimit.lowerPrice) / 2;
+  const upperDiff = ((circuitLimit.upperPrice - midPrice) / midPrice * 100).toFixed(2);
+  const lowerDiff = ((midPrice - circuitLimit.lowerPrice) / midPrice * 100).toFixed(2);
+  
+  return (
+    <div className="absolute left-1/2 -translate-x-1/2 -top-1 -translate-y-full opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 pointer-events-none">
+      <div className="relative">
+        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white border-r border-b border-gray-200 transform rotate-45"></div>
+        <div className="bg-white border border-gray-200 rounded-md shadow-md px-2 py-1 whitespace-nowrap relative">
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center">
+              <div className="w-2 h-2 rounded-full bg-red-500 mr-1"></div>
+              <span className="text-xs font-medium">+{upperDiff}%</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-2 h-2 rounded-full bg-green-500 mr-1"></div>
+              <span className="text-xs font-medium">-{lowerDiff}%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const EnhancedPortfolioTable: React.FC<{
   stocks: ExtendedStockData[];
   onStocksChange: (newStocks: ExtendedStockData[]) => void;
 }> = ({ stocks, onStocksChange }) => {
+  const { user } = useAuthContext();
   const [editCell, setEditCell] = useState<{ rowIdx: number | null; field: keyof ExtendedStockData | null }>({ rowIdx: null, field: null });
   const [editValue, setEditValue] = useState<string | number | null | undefined>(null);
   const [symbolIndustryMap, setSymbolIndustryMap] = useState<SymbolIndustryMap>({});
@@ -136,6 +182,7 @@ const EnhancedPortfolioTable: React.FC<{
   const [editingBuyDateIdx, setEditingBuyDateIdx] = useState<number | null>(null);
   const [priceLoadingIdx, setPriceLoadingIdx] = useState<number | null>(null);
   const [priceErrorIdx, setPriceErrorIdx] = useState<number | null>(null);
+  const [highlightedRows, setHighlightedRows] = useState<number[]>([]);
 
   // Load CSV and parse mapping on mount
   useEffect(() => {
@@ -147,6 +194,15 @@ const EnhancedPortfolioTable: React.FC<{
 
   useEffect(() => {
     let cancelled = false;
+    let interval: NodeJS.Timeout | null = null;
+    const istNow = getISTDate();
+    const dayOfWeek = istNow.getDay();
+    const marketOpen = new Date(istNow);
+    marketOpen.setHours(9, 15, 0, 0);
+    const marketClose = new Date(istNow);
+    marketClose.setHours(15, 30, 0, 0);
+    const isMarketLive = (dayOfWeek >= 1 && dayOfWeek <= 5) && (istNow >= marketOpen && istNow <= marketClose);
+
     const updateAll = async () => {
       const updatedStocks = [...stocks];
       for (let i = 0; i < stocks.length; i++) {
@@ -154,10 +210,22 @@ const EnhancedPortfolioTable: React.FC<{
         if (stock.buyPrice && !isNaN(stock.buyPrice) && stock.buyPrice > 0) {
           const currentPrice = await fetchStrikeLatestClose(stock.ticker);
           if (currentPrice !== null) {
-            updatedStocks[i] = {
-              ...stock,
-              returnPercent: ((currentPrice - stock.buyPrice) / stock.buyPrice) * 100,
-            };
+            const newReturn = ((currentPrice - stock.buyPrice) / stock.buyPrice) * 100;
+            if (updatedStocks[i].returnPercent !== newReturn) {
+              updatedStocks[i] = {
+                ...stock,
+                returnPercent: newReturn,
+              };
+              setHighlightedRows(prev => [...prev, i]);
+              setTimeout(() => {
+                setHighlightedRows(prev => prev.filter(idx => idx !== i));
+              }, 500); // highlight for 0.5s
+            } else {
+              updatedStocks[i] = {
+                ...stock,
+                returnPercent: newReturn,
+              };
+            }
           }
           // Wait 1.5 seconds between API calls
           await new Promise(res => setTimeout(res, 1500));
@@ -166,12 +234,19 @@ const EnhancedPortfolioTable: React.FC<{
       }
       onStocksChange(updatedStocks);
     };
-    const interval = setInterval(updateAll, 60000);
+
+    if (isMarketLive) {
+      updateAll(); // Initial fetch
+      interval = setInterval(updateAll, 60 * 1000); // Refresh every 1 minute
+    } else {
+      updateAll(); // Fetch once outside market hours
+    }
+
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      if (interval) clearInterval(interval);
     };
-  }, [stocks, onStocksChange]);
+  }, [user]);
 
   // Progress bar calculations
   const openRiskPercent = useMemo(() => {
@@ -593,7 +668,6 @@ const EnhancedPortfolioTable: React.FC<{
             <tr key={index} className={`text-sm hover:bg-gray-50 ${commonTransition} ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
               <td className="py-2 pr-4 whitespace-nowrap">
                 <div className="flex items-center">
-
                   {editCell.rowIdx === index && editCell.field === 'ticker' ? (
                     <div className="relative">
                       <div className="flex items-center">
@@ -625,13 +699,17 @@ const EnhancedPortfolioTable: React.FC<{
                       )}
                     </div>
                   ) : (
-                    <div className="flex items-center">
+                    <div className="relative flex items-center group">
                       <span className="text-gray-700 font-bold text-xs mr-1 w-4 text-right relative top-0.5">{index + 1}.</span>
-                      <span 
-                        className={`cursor-pointer font-medium text-gray-800 hover:opacity-75 ${commonTransition} block w-full px-2 py-1`} 
-                        onClick={() => handleCellEdit(index, 'ticker', stock.ticker)}>
-                        {stock.ticker}
-                      </span>
+                      <div className="relative group inline-block">
+                        <span 
+                          className="cursor-pointer font-medium text-gray-800 hover:opacity-75 block w-full px-2 py-1"
+                          onClick={() => handleCellEdit(index, 'ticker', stock.ticker)}
+                        >
+                          {stock.ticker}
+                        </span>
+                        <TickerTooltip ticker={stock.ticker} />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -787,7 +865,7 @@ const EnhancedPortfolioTable: React.FC<{
                   ) : (
                     <div className="flex justify-center">
                       <span 
-                        className={`cursor-pointer ${getReturnPillStyle(stock.returnPercent ?? 0)} hover:opacity-75 ${commonTransition} inline-flex items-center`} 
+                        className={`cursor-pointer ${getReturnPillStyle(stock.returnPercent ?? 0)} ${highlightedRows.includes(index) ? 'bg-yellow-200 transition-all' : ''} hover:opacity-75 ${commonTransition} inline-flex items-center`} 
                         onClick={() => handleCellEdit(index, 'returnPercent', stock.returnPercent)}>
                         {stock.returnPercent === 0 ? '0%' : `${(stock.returnPercent ?? 0) > 0 ? '+' : ''}${Math.abs(stock.returnPercent ?? 0).toFixed(2)}%`}
                       </span>
@@ -860,12 +938,25 @@ const EnhancedPortfolioTable: React.FC<{
             </tr>
           ))}
 
-          <tr className="text-sm font-medium">
-            <td colSpan={4}></td>
-            <td className="py-2 px-4 text-right font-semibold">{stocks.reduce((sum, stock) => sum + (stock.openRisk || 0), 0).toFixed(2)}%</td>
-            <td className="py-2 px-4 text-right font-semibold">{(stocks.reduce((sum, stock) => sum + ((stock.returnPercent ?? 0) * (stock.sizePercent || 0)), 0) / (stocks.reduce((sum, stock) => sum + (stock.sizePercent || 0), 0) || 1)).toFixed(2)}%</td>
-            <td className="py-2 px-4 text-right font-semibold">{stocks.reduce((sum, stock) => sum + (stock.sizePercent || 0), 0).toFixed(2)}%</td>
-            <td colSpan={4}></td>
+          <tr className="text-sm font-medium bg-gray-50 border-t border-gray-200">
+            <td className="py-2 px-2"></td> {/* Ticker */}
+            <td className="py-2 px-2"></td> {/* Status */}
+            <td className="py-2 px-2"></td> {/* Days Held */}
+            <td className="py-2 px-2"></td> {/* Setup */}
+            <td className="py-2 px-2"></td> {/* Trade Mgt */}
+            <td className="py-2 px-2 text-right font-semibold text-gray-800">
+              {stocks.reduce((sum, stock) => sum + (stock.openRisk || 0), 0).toFixed(2)}%
+            </td>
+            <td className="py-2 px-2 text-right font-semibold text-gray-800">
+              {stocks.length > 0 
+                ? (stocks.reduce((sum, stock) => sum + (stock.returnPercent || 0), 0) / stocks.length).toFixed(2) 
+                : '0.00'}%
+            </td>
+            <td className="py-2 px-2 text-right font-semibold text-gray-800">
+              {stocks.reduce((sum, stock) => sum + (stock.sizePercent || 0), 0).toFixed(2)}%
+            </td>
+            <td className="py-2 px-2"></td> {/* Industry */}
+            <td className="py-2 px-2"></td> {/* Position */}
           </tr>
         </tbody>
       </table>
@@ -876,5 +967,5 @@ const EnhancedPortfolioTable: React.FC<{
 
 export { EnhancedPortfolioTable };
 export type { ExtendedStockData };
-export { setupTypes, tradeMgtTypes };
+export { setupTypes, tradeMgtTypes, fetchStrikeLatestClose };
 export default EnhancedPortfolioTable;

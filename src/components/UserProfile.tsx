@@ -16,6 +16,7 @@ export const UserProfile: React.FC = () => {
   const [resetLoading, setResetLoading] = useState(false);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
   const [resetError, setResetError] = useState<string | null>(null);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -117,11 +118,20 @@ export const UserProfile: React.FC = () => {
         {resetError && <div className="text-red-600 text-xs text-center mt-1">{resetError}</div>}
       </div>
       <button
-        onClick={signOut}
+        onClick={async () => {
+          setSignOutError(null);
+          const result = await signOut();
+          if (result.success) {
+            window.location.reload();
+          } else {
+            setSignOutError('Sign out failed. Please try again.');
+          }
+        }}
         className="mt-8 px-5 py-2 rounded-full bg-gray-100 text-gray-700 font-medium shadow hover:bg-gray-200 transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-400"
       >
         Sign Out
       </button>
+      {signOutError && <div className="text-red-600 text-xs text-center mt-2">{signOutError}</div>}
     </div>
   );
 };

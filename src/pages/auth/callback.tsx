@@ -3,27 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 
 export default function AuthCallback() {
-  const navigate = typeof useNavigate === 'function' ? useNavigate() : null;
+  const navigate = useNavigate();
 
   useEffect(() => {
     const handleAuth = async () => {
-      const url = new URL(window.location.href);
-      const code = url.searchParams.get('code');
-      if (code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
-        if (!error) {
-          if (navigate) {
-            navigate('/');
-          } else {
-            window.location.replace('/');
-          }
-        } else {
-          if (navigate) {
-            navigate('/auth/auth-code-error');
-          } else {
-            window.location.replace('/auth/auth-code-error');
-          }
-        }
+      // Handles both code and hash fragment (access_token) in the URL
+      const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
+      if (!error) {
+        navigate('/', { replace: true });
+      } else {
+        navigate('/auth/auth-code-error', { replace: true });
       }
     };
     handleAuth();
