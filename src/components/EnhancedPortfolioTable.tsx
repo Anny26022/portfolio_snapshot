@@ -186,7 +186,7 @@ const EnhancedPortfolioTable: React.FC<{
 
   // Load CSV and parse mapping on mount
   useEffect(() => {
-    fetch('/Basic RS Setup (1).csv')
+    fetch('/Basic_RS_Setup.csv')
       .then(res => res.text())
       .then(csv => setSymbolIndustryMap(parseCsvToIndustryMap(csv)))
       .catch(() => setSymbolIndustryMap({}));
