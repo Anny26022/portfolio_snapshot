@@ -16,4 +16,4 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 })
 
 // Site URL for redirects
-export const siteUrl = 'http://localhost:5173/'
+export const siteUrl = 'https://pf-ss.vercel.app/'
